@@ -26,13 +26,8 @@ pub enum ExecuteMsg {
 #[serde(rename_all = "snake_case")]
 pub enum QueryMsg {
     AllPolls {},
-    Poll {
-        poll_id: String,
-    },
-    Vote {
-        poll_id: String,
-        address: String,
-    },
+    Poll { poll_id: String },
+    Vote { poll_id: String, address: String },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
