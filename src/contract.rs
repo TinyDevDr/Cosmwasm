@@ -1,10 +1,14 @@
 #[cfg(not(feature = "library"))]
 use cosmwasm_std::entry_point;
-use cosmwasm_std::{Binary, Deps, DepsMut, Env, MessageInfo, Response, StdResult};
+use cosmwasm_std::{
+    to_binary, Binary, Deps, DepsMut, Env, MessageInfo, Order, Response, StdResult,
+};
 use cw2::set_contract_version;
 
 use crate::error::ContractError;
-use crate::msg::{ExecuteMsg, InstantiateMsg, MigrateMsg, QueryMsg};
+use crate::msg::{
+    AllPollsResponse, ExecuteMsg, InstantiateMsg, MigrateMsg, PollResponse, QueryMsg, VoteResponse,
+};
 use crate::state::{Ballot, Config, Poll, BALLOTS, CONFIG, POLLS};
 
 const CONTRACT_NAME: &str = "crates.io:cw-starter";
@@ -116,10 +120,7 @@ fn execute_vote(
                 },
             )?;
             // Find the position of the new vote option and increment it by 1
-            let position = poll
-                .options
-                .iter()
-                .position(|option| option.0 == vote);
+            let position = poll.options.iter().position(|option| option.0 == vote);
             if position.is_none() {
                 return Err(ContractError::Unauthorized {});
             }
@@ -134,8 +135,33 @@ fn execute_vote(
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
-pub fn query(_deps: Deps, _env: Env, _msg: QueryMsg) -> StdResult<Binary> {
-    unimplemented!()
+pub fn query(deps: Deps, env: Env, msg: QueryMsg) -> StdResult<Binary> {
+    match msg {
+        QueryMsg::AllPolls {} => query_all_polls(deps, env),
+        QueryMsg::Poll { poll_id } => query_poll(deps, env, poll_id),
+        QueryMsg::Vote { address, poll_id } => query_vote(deps, env, address, poll_id),
+    }
+}
+
+fn query_all_polls(deps: Deps, env: Env) -> StdResult<Binary> {
+    let polls = POLLS
+        .range(deps.storage, None, None, Order::Ascending)
+        .map(|p| Ok(p?.1))
+        .collect::<StdResult<Vec<_>>>()?;
+
+    to_binary(&AllPollsResponse { polls })
+}
+
+fn query_poll(deps: Deps, env: Env, poll_id: String) -> StdResult<Binary> {
+    let poll = POLLS.may_load(deps.storage, poll_id)?;
+    to_binary(&PollResponse { poll })
+}
+
+fn query_vote(deps: Deps, env: Env, address: String, poll_id: String) -> StdResult<Binary> {
+    let validated_address = deps.api.addr_validate(&address).unwrap();
+    let vote = BALLOTS.may_load(deps.storage, (validated_address, poll_id))?;
+
+    to_binary(&VoteResponse { vote })
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
@@ -145,10 +171,10 @@ pub fn migrate(_deps: DepsMut, _env: Env, _msg: MigrateMsg) -> Result<Response, 
 
 #[cfg(test)]
 mod tests {
-    use crate::contract::{execute, instantiate};
-    use crate::msg::{ExecuteMsg, InstantiateMsg};
-    use cosmwasm_std::attr;
+    use crate::contract::{execute, instantiate, query};
+    use crate::msg::{AllPollsResponse, ExecuteMsg, InstantiateMsg, QueryMsg};
     use cosmwasm_std::testing::{mock_dependencies, mock_env, mock_info};
+    use cosmwasm_std::{attr, from_binary};
 
     pub const ADDR1: &str = "ADDR1";
     pub const ADDR2: &str = "ADDR2";
